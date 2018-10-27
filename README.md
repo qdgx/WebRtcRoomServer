@@ -3,6 +3,10 @@ WebRtcRoom Server，使用Node js开发，信令服务器使用 Socket.IO
 
 Android，iOS，Html，Server均做了实现，若有需要可分别查看。
 
+WebRtcRoomHtml: https://github.com/qdgx/WebRtcRoomHtml
+
+WebRtcRoomAndroid: https://github.com/qdgx/WebRtcRoomAndroid
+
 # 接口说明
 
 通过Socket.Io进行数据交互，Json格式
