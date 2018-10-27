@@ -1,0 +1,335 @@
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>WebRtc视频聊天室</title>
+    <script type="text/javascript" src="js/socket.io.js"></script>
+    <script type="text/javascript" charset="utf-8">
+        /** 信令 注：一条Socket连接*/
+        //socket
+        //var socket = io('ws://172.16.70.226:8081');
+        var socket = io('wss://172.16.70.226:8443');
+        //本地socket id
+        var socketId;
+        //room id
+        var roomId;
+
+        /** RTCPeerConnection 注：视频聊天室内有几个其他客户端则有几条RTCPeerConnection连接*/
+        //存储RTCPeerConnection连接
+        var rtcConnects = {};
+        //ice服务器
+        var config = {
+            'iceServers': [{ 'url': 'stun:stun.xten.com' }]
+        };
+        var offerOptions = {
+            offerToReceiveAudio: 1,
+            offerToReceiveVideo: 1
+        };
+
+        //本地stream
+        var localStream = null;
+
+        /** UI操作 */
+        //创建并加入聊天室
+        function createAndJoinRoom() {
+            var roomName = $('roomName').value;
+            if (roomName) {
+                //【createAndJoinRoom】  创建并加入Room中 [room]
+                socket.emit('createAndJoinRoom', { room: roomName })
+            } else {
+                console.log('请输入聊天室名');
+            }
+        }
+
+        //退出聊天室 [from,room]
+        function exit() {
+            //信令服务器发送 exit [from room]
+            var data = {};
+            data.from = socketId;
+            data.room = roomId;
+            socket.emit('exit', data);
+            //可操作
+            $('createAndJoinRoom').disabled = false;
+            //数据重置
+            socketId = '';
+            roomId = '';
+            //peer关闭
+            for (var i in rtcConnects) {
+                var pc = rtcConnects[i];
+                pc.close();
+                pc = null;
+            }
+            rtcConnects = {};
+            //移除远程摄像头
+            $('remoteDiv').innerHTML = '';
+        }
+
+        /** WebRtc相关 */
+        //构建webRtc连接并返回
+        function getOrCreateRtcConnect(socketId) {
+            var pc = rtcConnects[socketId];
+            if (typeof (pc) == 'undefined') {
+                //构建RTCPeerConnection
+                pc = new RTCPeerConnection(config);
+                //设置获取icecandidate信息回调
+                pc.onicecandidate = e => onIceCandidate(pc, socketId, e);
+                // //设置获取对端stream数据回调--stream方式
+                // pc.onaddstream = e => onAddStream(pc, socketId, e);
+                // if (localStream != null) {
+                //     //peer设置本地流
+                //     pc.addStream(localStream);
+                // }
+
+                //设置获取对端stream数据回调--track方式
+                pc.ontrack = e => onTrack(pc, socketId, e);
+                if (localStream != null) {
+                    //peer设置本地流
+                    localStream.getTracks().forEach(function(track) {
+                         pc.addTrack(track, localStream);
+                    });
+                }
+                //设置获取对端stream数据回调
+                pc.onremovestream = e => onRemoveStream(pc, socketId, e);
+                //保存peer连接
+                rtcConnects[socketId] = pc;
+            }
+            return pc;
+        }
+
+        //移除webRtc连接
+        function removeRtcConnect(socketId) {
+            delete rtcConnects[socketId];
+        }
+
+        //绑定本地摄像头流至video展示
+        function gotStream(stream) {
+            console.log('Received local stream');
+            $('localVideo').srcObject = stream;
+            localStream = stream;
+        }
+
+        /** WebRtc RTCPeerConnection 事件回调 */
+        //获取icecandidate信息回调
+        function onIceCandidate(pc, id, event) {
+            //向信令服务器发送 candidate [from,to,room,candidate[sdpMid,sdpMLineIndex,sdp]]
+            console.log('onIceCandidate to ' + id + ' candidate ' + event);
+            if (event.candidate != null) {
+                var message = {};
+                message.from = socketId;
+                message.to = id;
+                message.room = roomId;
+                var candidate = {};
+                candidate.sdpMid = event.candidate.sdpMid;
+                candidate.sdpMLineIndex = event.candidate.sdpMLineIndex;
+                candidate.sdp = event.candidate.candidate;
+                message.candidate = candidate;
+                socket.emit('candidate', message);
+            }
+        }
+
+        //获取对端stream数据回调--onaddstream模式
+        function onAddStream(pc, id, event) {
+            console.log('onAddStream from ' + id);
+            //动态创建video    <video id="localVideo" style='width:200;height:200;' autoplay></video>
+            //$('remoteDiv').innerHTML += `<video id="${id}" style='width:200;height:200;' autoplay></video>`;
+            var video = document.createElement('video');
+            video.id = id;
+            video.autoplay = 'autoplay';
+            video.style.width = 200;
+            video.style.height = 200;
+            video.style.marginRight = 5;
+            $('remoteDiv').appendChild(video);
+            //对接数据流
+            $(id).srcObject = event.stream;
+        }
+
+        //获取对端stream数据回调--onTrack模式
+        function onTrack(pc, id, event) {
+            console.log('onTrack from ' + id);
+            //动态创建video    <video id="localVideo" style='width:200;height:200;' autoplay></video>
+            //$('remoteDiv').innerHTML += `<video id="${id}" style='width:200;height:200;' autoplay></video>`;
+            var video = document.createElement('video');
+            video.id = id;
+            video.autoplay = 'autoplay';
+            video.style.width = 200;
+            video.style.height = 200;
+            video.style.marginRight = 5;
+            $('remoteDiv').appendChild(video);
+            $(id).srcObject = event.streams[0];
+        }
+
+        //onRemoveStream回调
+        function onRemoveStream(pc, id, event) {
+            console.log('onRemoveStream from ' + id);
+            //peer关闭
+            getOrCreateRtcConnect(id).close;
+            //删除peer对象
+            delete rtcConnects[id];
+            //移除video
+            $('remoteDiv').removeChild($(id));
+        }
+
+        //offer创建成功回调
+        function onCreateOfferSuccess(pc, id, offer) {
+            console.log('createOffer: success ' + ' id:' + id + ' offer ' + JSON.stringify(offer));
+            //设置本地setLocalDescription
+            pc.setLocalDescription(offer);
+            //发送offer消息
+            var message = {};
+            message.from = socketId;
+            message.to = id;
+            message.room = roomId;
+            message.sdp = offer.sdp;
+            socket.emit('offer', message);
+        }
+
+        //offer创建失败回调
+        function onCreateOfferError(pc, id, error) {
+            console.log('createOffer: fail error ' + error);
+        }
+
+        //answer创建成功回调
+        function onCreateAnswerSuccess(pc, id, offer) {
+            console.log('createAnswer: success ' + ' id:' + id + ' offer ' + JSON.stringify(offer));
+            //设置本地setLocalDescription
+            pc.setLocalDescription(offer);
+            //发送answer消息
+            var message = {};
+            message.from = socketId;
+            message.to = id;
+            message.room = roomId;
+            message.sdp = offer.sdp;
+            socket.emit('answer', message);
+        }
+
+        //answer创建失败回调
+        function onCreateAnswerError(pc, id, error) {
+            console.log('createAnswer: fail error ' + error);
+        }
+
+        /** 信令socket监听 */
+        //created [id,room,peers]
+        socket.on('created', async function (data) {
+            console.log('created: ' + JSON.stringify(data));
+            $('createAndJoinRoom').disabled = true;
+            //设置socket id
+            socketId = data.id;
+            //设置room id
+            roomId = data.room;
+            //根据回应peers 循环创建WebRtcPeerConnection & 发送offer消息 [from,to,room,sdp]
+            for (let i = 0; i < data.peers.length; i++) {
+                var otherSocketId = data.peers[i].id;
+                //创建WebRtcPeerConnection
+                var pc = getOrCreateRtcConnect(otherSocketId);
+                //设置offer
+                const offer = await pc.createOffer(offerOptions);//pc.createOffer(offerOptions).then(offer => onCreateOfferSuccess(pc, otherSocketId, offer), error => onCreateOfferError(pc, otherSocketId, error));
+                onCreateOfferSuccess(pc, otherSocketId, offer);
+                //闭包解决方式
+                // (function(pc, otherSocketId){
+                //     pc.createOffer(offerOptions).then(offer => onCreateOfferSuccess(pc, otherSocketId, offer), error => onCreateOfferError(pc, otherSocketId, error));
+                // })(pc, otherSocketId);
+
+            }
+        })
+
+        //joined [id,room]
+        socket.on('joined', function (data) {
+            console.log('joined: ' + JSON.stringify(data));
+            //构建Peer
+            getOrCreateRtcConnect(data.from);
+        })
+
+        //offer [from,to,room,sdp]
+        socket.on('offer', function (data) {
+            console.log('offer: ' + JSON.stringify(data));
+            //获取peer
+            var pc = getOrCreateRtcConnect(data.from);
+            //构建RTCSessionDescription参数
+            var rtcDescription = { type: 'offer', sdp: data.sdp };
+            //设置远端setRemoteDescription
+            pc.setRemoteDescription(new RTCSessionDescription(rtcDescription));
+            //createAnswer
+            pc.createAnswer(offerOptions).then(offer => onCreateAnswerSuccess(pc, data.from, offer), error => onCreateAnswerError(pc, otherSocketId, error));
+        })
+
+        //answer [from,to,room,sdp]
+        socket.on('answer', function (data) {
+            console.log('answer: ' + JSON.stringify(data));
+            //获取peer
+            var pc = getOrCreateRtcConnect(data.from);
+            //构建RTCSessionDescription参数
+            var rtcDescription = { type: 'answer', sdp: data.sdp };
+            //设置远端setRemoteDescription
+            pc.setRemoteDescription(new RTCSessionDescription(rtcDescription));
+        })
+
+        //candidate  [from,to,room,candidate[sdpMid,sdpMLineIndex,sdp]]
+        socket.on('candidate', function (data) {
+            console.log('candidate: ' + JSON.stringify(data));
+            var iceData = data.candidate;
+            //获取Peer
+            var pc = getOrCreateRtcConnect(data.from);
+            var rtcIceCandidate = new RTCIceCandidate({
+                candidate: iceData.sdp,
+                sdpMid: iceData.sdpMid,
+                sdpMLineIndex: iceData.sdpMLineIndex
+            });
+            //添加对端Candidate
+            pc.addIceCandidate(rtcIceCandidate);
+        })
+
+        //exit [from,room]
+        socket.on('exit', function (data) {
+            console.log('exit: ' + JSON.stringify(data));
+            //判断是否为当前连接 
+            var pc = rtcConnects[data.from];
+            if (typeof (pc) == 'undefined') {
+                return;
+            } else {
+                //peer关闭
+                getOrCreateRtcConnect(data.from).close;
+                //删除peer对象
+                delete rtcConnects[data.from];
+                //移除video
+                $('remoteDiv').removeChild($(data.from));
+
+            }
+        })
+
+        function $(id) {
+            return document.getElementById(id);
+        }
+
+        //启动摄像头
+        function startCamera() {
+            //启动摄像头
+            if (localStream == null) {
+                navigator.mediaDevices
+                    .getUserMedia({
+                        audio: true,
+                        video: true
+                    })
+                    .then(stream => gotStream(stream))
+                    .catch(e => alert('getUserMedia() error: ${e.name}'));
+            }
+        }
+
+        //初始启动摄像头
+        startCamera();
+    </script>
+</head>
+
+<body>
+    <input type="text" id="roomName" placeholder="请填写Room名称" />
+    <br/>
+    <button id="createAndJoinRoom" onclick="createAndJoinRoom()">createAndJoinRoom</button>
+    <br/>
+    <button id="exit" onclick="exit()">exit</button>
+    <br/>
+    <video id="localVideo" style='width:200;height:200;' autoplay></video>
+    <br/>
+    <div id='remoteDiv'></div>
+</body>
+
+</html>

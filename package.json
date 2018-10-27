@@ -1,0 +1,19 @@
+{
+  "name": "webRtcRoom",
+  "version": "1.0.0",
+  "author": "chengshaobo <ckcsb@126.com>",
+  "description": "A webRTC live streaming server",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pchab/ProjectRTC.git"
+  },
+  "dependencies": {
+    "ejs": "2.5.5",
+    "express": "^4.16.0",
+    "express-session": "^1.11.1",
+    "socket.io": "2.1.1"
+  }
+}
