@@ -7,6 +7,8 @@ WebRtcRoomHtml: https://github.com/qdgx/WebRtcRoomHtml
 
 WebRtcRoomAndroid: https://github.com/qdgx/WebRtcRoomAndroid
 
+WebRtcRoomIOS: https://github.com/qdgx/WebRtcRoomIOS
+
 # 接口说明
 
 通过Socket.Io进行数据交互，Json格式
