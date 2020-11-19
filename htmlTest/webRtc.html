@@ -68,6 +68,7 @@
         /** WebRtc相关 */
         //构建webRtc连接并返回
         function getOrCreateRtcConnect(socketId) {
+            if (!socketId) return;
             var pc = rtcConnects[socketId];
             if (typeof (pc) == 'undefined') {
                 //构建RTCPeerConnection
